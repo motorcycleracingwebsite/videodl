@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: videodl-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
