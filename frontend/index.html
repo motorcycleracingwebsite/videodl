@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VideoDL — Scarica qualsiasi video</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --accent: #5b8cff;
+    --text: #eaeaea;
+    --muted: #9aa0ab;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 40px 16px;
+  }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  p.subtitle { color: var(--muted); margin-top: 0; margin-bottom: 32px; }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 24px;
+    width: 100%;
+    max-width: 560px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid #2a2e38;
+    background: #0d0f13;
+    color: var(--text);
+    font-size: 15px;
+  }
+  button {
+    margin-top: 12px;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  select {
+    width: 100%;
+    padding: 10px;
+    margin-top: 12px;
+    border-radius: 8px;
+    border: 1px solid #2a2e38;
+    background: #0d0f13;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .video-info {
+    display: none;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #2a2e38;
+  }
+  .video-info img {
+    width: 100%;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .status {
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--muted);
+    min-height: 18px;
+  }
+  .status.error { color: #ff6b6b; }
+</style>
+</head>
+<body>
+
+<h1>VideoDL</h1>
+<p class="subtitle">Incolla un link, scegli la qualità, scarica.</p>
+
+<div class="card">
+  <input type="text" id="urlInput" placeholder="Incolla qui il link del video (YouTube, TikTok, ecc.)">
+  <button id="analyzeBtn">Analizza</button>
+  <div class="status" id="analyzeStatus"></div>
+
+  <div class="video-info" id="videoInfo">
+    <img id="thumbnail" src="" alt="">
+    <div id="videoTitle" style="font-weight:600; margin-bottom:8px;"></div>
+    <select id="qualitySelect"></select>
+    <button id="downloadBtn">Scarica</button>
+    <div class="status" id="downloadStatus"></div>
+  </div>
+</div>
+
+<script>
+  const API_BASE = "https://IL-TUO-BACKEND.onrender.com";
+
+  const urlInput = document.getElementById("urlInput");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const analyzeStatus = document.getElementById("analyzeStatus");
+  const videoInfo = document.getElementById("videoInfo");
+  const thumbnail = document.getElementById("thumbnail");
+  const videoTitle = document.getElementById("videoTitle");
+  const qualitySelect = document.getElementById("qualitySelect");
+  const downloadBtn = document.getElementById("downloadBtn");
+  const downloadStatus = document.getElementById("downloadStatus");
+
+  let currentUrl = "";
+
+  analyzeBtn.addEventListener("click", async () => {
+    const url = urlInput.value.trim();
+    if (!url) {
+      analyzeStatus.textContent = "Inserisci un link prima di continuare.";
+      analyzeStatus.classList.add("error");
+      return;
+    }
+
+    analyzeStatus.classList.remove("error");
+    analyzeStatus.textContent = "Analisi in corso... (può richiedere qualche secondo)";
+    analyzeBtn.disabled = true;
+    videoInfo.style.display = "none";
+
+    try {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Errore sconosciuto");
+      }
+
+      const data = await res.json();
+      currentUrl = url;
+
+      videoTitle.textContent = data.title || "Video senza titolo";
+      thumbnail.src = data.thumbnail || "";
+      thumbnail.style.display = data.thumbnail ? "block" : "none";
+
+      qualitySelect.innerHTML = "";
+      data.formats.forEach((f) => {
+        const opt = document.createElement("option");
+        opt.value = f.format_id;
+        const size = f.filesize_approx
+          ? ` (~${(f.filesize_approx / 1024 / 1024).toFixed(1)} MB)`
+          : "";
+        opt.textContent = `${f.label} - ${f.ext}${size}`;
+        qualitySelect.appendChild(opt);
+      });
+
+      videoInfo.style.display = "block";
+      analyzeStatus.textContent = "";
+    } catch (e) {
+      analyzeStatus.textContent = e.message;
+      analyzeStatus.classList.add("error");
+    } finally {
+      analyzeBtn.disabled = false;
+    }
+  });
+
+  downloadBtn.addEventListener("click", async () => {
+    const formatId = qualitySelect.value;
+    if (!formatId) return;
+
+    downloadStatus.classList.remove("error");
+    downloadStatus.textContent = "Download in corso... (può richiedere un po' di tempo)";
+    downloadBtn.disabled = true;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: currentUrl, format_id: formatId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Errore durante il download");
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?(.+)"?/);
+      const filename = match ? match[1].replace(/"$/, "") : "video.mp4";
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+
+      downloadStatus.textContent = "Fatto! Controlla i tuoi download.";
+    } catch (e) {
+      downloadStatus.textContent = e.message;
+      downloadStatus.classList.add("error");
+    } finally {
+      downloadBtn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
